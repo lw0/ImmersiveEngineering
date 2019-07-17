@@ -41,7 +41,7 @@ import static blusunrize.immersiveengineering.api.energy.wires.WireType.REDSTONE
 public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable implements ITickable, IDirectionalTile, IRedstoneOutput, IHammerInteraction, IBlockBounds, IBlockOverlayText, IOBJModelCallback<IBlockState>, IRedstoneConnector
 {
 	public EnumFacing facing = EnumFacing.DOWN;
-	public int ioMode = 0; // 0 - input, 1 -output
+	public int ioMode = 0; // 0 - input, 1 - output always, 2 - output >= 2, 3 - output >= 3, ..., 15 - output == 15
 	public int redstoneChannel = 0;
 	public boolean rsDirty = false;
 
@@ -69,7 +69,10 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 			return 0;
 		if(world.isRemote)
 			return outputClient;
-		return wireNetwork!=null?wireNetwork.getPowerOutput(redstoneChannel): 0;
+		int power = wireNetwork!=null?wireNetwork.getPowerOutput(redstoneChannel): 0;
+		if(power < this.ioMode)
+			return 0;
+		return power;
 	}
 
 	@Override
@@ -79,7 +82,10 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 			return 0;
 		if(world.isRemote)
 			return outputClient;
-		return wireNetwork!=null?wireNetwork.getPowerOutput(redstoneChannel): 0;
+		int power = wireNetwork!=null?wireNetwork.getPowerOutput(redstoneChannel): 0;
+		if(power < this.ioMode)
+			return 0;
+		return power;
 	}
 
 	@Override
@@ -148,7 +154,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 
 	public boolean isRSOutput()
 	{
-		return ioMode==1;
+		return ioMode>=1;
 	}
 
 	@Override
@@ -158,7 +164,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 		if(player.isSneaking())
 			redstoneChannel = (redstoneChannel+1)%16;
 		else
-			ioMode = ioMode==0?1: 0;
+			ioMode = (ioMode+1)%16;
 		markDirty();
 		wireNetwork.updateValues();
 		onChange();
@@ -305,7 +311,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 	public boolean shouldRenderGroup(IBlockState object, String group)
 	{
 		if("io_out".equals(group))
-			return this.ioMode==1;
+			return this.ioMode>=1;
 		else if("io_in".equals(group))
 			return this.ioMode==0;
 		return true;
@@ -326,6 +332,13 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 		return redstoneChannel+";"+ioMode;
 	}
 
+    private String getOutputModeString()
+    {
+      if(this.ioMode <= 1)
+        return "";
+      return " ("+this.ioMode+"+)";
+    }
+
 	@Override
 	public String[] getOverlayText(EntityPlayer player, RayTraceResult mop, boolean hammer)
 	{
@@ -333,7 +346,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 			return null;
 		return new String[]{
 				I18n.format(Lib.DESC_INFO+"redstoneChannel", I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannel).getTranslationKey())),
-				I18n.format(Lib.DESC_INFO+"blockSide.io."+this.ioMode)
+				I18n.format(Lib.DESC_INFO+"blockSide.io."+(this.ioMode==0?0:1)) + this.getOutputModeString()
 		};
 	}
 
