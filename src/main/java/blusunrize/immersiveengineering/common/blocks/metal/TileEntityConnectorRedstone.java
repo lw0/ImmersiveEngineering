@@ -42,11 +42,13 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 {
 	public EnumFacing facing = EnumFacing.DOWN;
 
-	//bit 3..0: 0 - input, 1 - output always, 2 - output >= 2, ..., 15 - output == 15
-	//bit    4: 0 - not inverted, 1 - inverted
-	//bit    5: 0 - not quantized, 1 - quantized
-	private int ioMode = 0;
-	private int redstoneChannel = 0;
+	//bit     0: [IO] 0 - input, 1 - output always
+	//bit  5..4: [InMode] 0 - analog, 1 - analog inverted, 2 - digital, 3 - digital inverted
+	//bit  7..6: [OutMode] 0 - analog, 1 - analog inverted, 2 - digital, 3 - digital inverted
+	//bit 11..8: [InThreshold]
+	//bit 15..12:[OutThreshold]
+	public int ioMode = 0;
+	public int redstoneChannel = 0;
 	public boolean rsDirty = false;
 
 	protected RedstoneWireNetwork wireNetwork = new RedstoneWireNetwork().add(this);
@@ -55,54 +57,124 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 	private int outputClient = -1;
 
 
-	public void changeMode()
+	public void changeIO()
 	{
-		ioMode = (ioMode & 0x30) | ((ioMode + 1) & 0x0f);
+		ioMode = ioMode ^ 0x0001;
 	}
-
+	public int getIO()
+	{
+		return ioMode & 0x0001;
+	}
 	public boolean isOutput()
 	{
-		return (ioMode & 0xf) != 0;
+		return getIO() != 0;
 	}
 
+	public void changeInMode()
+	{
+		ioMode = (ioMode & ~0x0030) | ((ioMode + 0x10) & 0x0030);
+	}
+	public int getInMode()
+	{
+		return (ioMode & 0x0030) >> 4;
+	}
+	public boolean isInInverted()
+	{
+		return (getInMode() & 0x1) != 0;
+	}
+	public boolean isInDigital()
+	{
+		return (getInMode() & 0x2) != 0;
+	}
+
+	public void changeOutMode()
+	{
+		ioMode = (ioMode & ~0x00C0) | ((ioMode + 0x40) & 0x00C0);
+	}
+	public int getOutMode()
+	{
+		return (ioMode & 0x00C0) >> 6;
+	}
+	public boolean isOutInverted()
+	{
+		return (getOutMode() & 0x1) != 0;
+	}
+	public boolean isOutDigital()
+	{
+		return (getOutMode() & 0x2) != 0;
+	}
+
+  	public void changeInThreshold()
+	{
+		ioMode = (ioMode & ~0x0f00) | ((ioMode + 0x100) & 0x0f00);
+	}
+	public int getInThreshold()
+	{
+		return (ioMode & 0x0f00) >> 8;
+	}
+
+	public void changeOutThreshold()
+	{
+		ioMode = (ioMode & ~0xf000) | ((ioMode + 0x1000) & 0xf000);
+	}
+	public int getOutThreshold()
+	{
+		return (ioMode & 0xf000) >> 12;
+	}
+
+	public void changeMode()
+	{
+		if(isOutput())
+			changeOutMode();
+		else
+			changeInMode();
+	}
 	public int getMode()
 	{
-		return ioMode & 0xf;
+		if(isOutput())
+			return getOutMode();
+		else
+			return getInMode();
 	}
 
-	public void changeOptions()
+  	public void changeThreshold()
 	{
-		ioMode = (ioMode & 0xf) | ((ioMode + 0x10) & 0x30);
+		if(isOutput())
+			changeOutThreshold();
+		else
+			changeInThreshold();
+	}
+	public int getThreshold()
+	{
+		if(isOutput())
+			return getOutThreshold();
+		else
+			return getInThreshold();
 	}
 
-	public boolean getOptions()
+	public int transformInSignal(int power)
 	{
-		return (ioMode & 0x30) >> 4;
-	}
-
-	public boolean isInverted()
-	{
-		return (ioMode & 0x10) != 0;
-	}
-
-	public boolean isQuantized()
-	{
-		return (ioMode & 0x20) != 0;
-	}
-
-	public int transformPower(int power)
-	{
-		int effectivePower = isInverted()? 15-power : power;
-		if(effectivePower < getMode())
+		int effectivePower = isInInverted()? 15-power : power;
+		if(effectivePower < getInThreshold())
 			effectivePower = 0;
-		if(isQuantized() && effectivePower != 0)
+		if(isInDigital() && effectivePower != 0)
+			effectivePower = 15;
+		return effectivePower;
+	}
+
+	public int transformOutSignal(int power)
+	{
+		int effectivePower = isOutInverted()? 15-power : power;
+		if(effectivePower < getOutThreshold())
+			effectivePower = 0;
+		if(isOutDigital() && effectivePower != 0)
 			effectivePower = 15;
 		return effectivePower;
 	}
 
 	public void changeChannel()
 	{
-		redstoneChannel = (redstoneChannel + 1) & 0xf;
+		redstoneChannel = (redstoneChannel + 1) % 16;
 	}
 
 	@Override
@@ -129,7 +201,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 			return 0;
 		if(world.isRemote)
 			return outputClient;
-		return transformPower(wireNetwork!=null? wireNetwork.getPowerOutput(redstoneChannel) : 0);
+		return transformOutSignal(wireNetwork!=null? wireNetwork.getPowerOutput(redstoneChannel) : 0);
 	}
 
 	@Override
@@ -139,7 +211,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 			return 0;
 		if(world.isRemote)
 			return outputClient;
-		return transformPower(wireNetwork!=null? wireNetwork.getPowerOutput(redstoneChannel) : 0);
+		return transformOutSignal(wireNetwork!=null? wireNetwork.getPowerOutput(redstoneChannel) : 0);
 	}
 
 	@Override
@@ -187,7 +259,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 	public void updateInput(byte[] signals)
 	{
 		if(isRSInput())
-			signals[redstoneChannel] = (byte)Math.max(transformPower(getLocalRS()), signals[redstoneChannel]);
+			signals[redstoneChannel] = (byte)Math.max(transformInSignal(getLocalRS()), signals[redstoneChannel]);
 		rsDirty = false;
 	}
 
@@ -206,39 +278,40 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 		return val;
 	}
 
-	private boolean hitColorRings(float hitX, float hitY, float hitZ)
+	private int classifyHit(float hitX, float hitY, float hitZ)
 	{
-		float limit = 0.32f;
+		// 0 - channel area (lower ring), 1 - mode area (upper ring), 2 - threshold area (cube on top)
+		float channelLimit = 0.16f;
+		float modeLimit = 0.32f;
 		switch(facing.getOpposite())
 		{
 			case UP:
-				return hitY < limit;
+				return (hitY < modeLimit)? (hitY < channelLimit)? 0 : 1 : 2;
 			case DOWN:
-				return hitY > (1.f - limit);
+				return (hitY > (1-modeLimit))? (hitY > (1-channelLimit))? 0 : 1 : 2;
 			case SOUTH:
-				return hitZ < limit;
+				return (hitZ < modeLimit)? (hitZ < channelLimit)? 0 : 1 : 2;
 			case NORTH:
-				return hitZ > (1.f - limit);
+				return (hitZ > (1-modeLimit))? (hitZ > (1-channelLimit))? 0 : 1 : 2;
 			case EAST:
-				return hitX < limit;
+				return (hitX < modeLimit)? (hitX < channelLimit)? 0 : 1 : 2;
 			case WEST:
-				return hitX > (1.f - limit);
+				return (hitX > (1-modeLimit))? (hitX > (1-channelLimit))? 0 : 1 : 2;
 		}
-		return false;
+		return 0;
 	}
 
 	@Override
 	public boolean hammerUseSide(EnumFacing side, EntityPlayer player, float hitX, float hitY, float hitZ)
 	{
-		//Normal hammering toggles mode, i.e. input or output with threshold
-		//Sneak-hammering on the lower rings iterates through colours/channels
-		//Sneak-hammering on the upper cube toggles inverted and quantizing mode
-		if(player.isSneaking() && hitColorRings(hitX, hitY, hitZ))
-			changeChannel();
-		else if(player.isSneaking())
-			changeOptions();
-		else
+		if(player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 2)
+			changeThreshold();
+		else if(player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 1)
 			changeMode();
+		else if(player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 0)
+			changeChannel();
+		else
+			changeIO();
 		markDirty();
 		wireNetwork.updateValues();
 		onChange();
@@ -385,9 +458,9 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 	public boolean shouldRenderGroup(IBlockState object, String group)
 	{
 		if("io_out".equals(group))
-			return !isInput();
+			return isOutput();
 		else if("io_in".equals(group))
-			return isInput();
+			return !isOutput();
 		return true;
 	}
 
@@ -411,9 +484,12 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 	{
 		if(!hammer)
 			return null;
+		String channelString = I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannel).getTranslationKey());
+		String ioString = I18n.format(Lib.DESC_INFO+"blockSide.io."+getIO());
+		String thresholdString = (getThreshold() > 0)? "("+getThreshold()+"+)" : "";
 		return new String[]{
-				I18n.format(Lib.DESC_INFO+"redstoneChannel", I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannel).getTranslationKey())),
-				I18n.format(Lib.DESC_INFO+"redstoneOptions."+getOptions(), I18n.format(Lib.DESC_INFO+"redstoneMode."+getMode())),
+				I18n.format(Lib.DESC_INFO+"redstoneChannel", channelString),
+				I18n.format(Lib.DESC_INFO+"redstoneMode."+getMode(), ioString, thresholdString)
 		};
 	}
 
@@ -425,7 +501,7 @@ public class TileEntityConnectorRedstone extends TileEntityImmersiveConnectable 
 
 	@Override
 	public boolean moveConnectionTo(Connection c, BlockPos newEnd)
-	{
+  	{
 		return true;
 	}
 }

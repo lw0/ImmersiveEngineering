@@ -71,7 +71,7 @@ public class TileEntityConnectorProbe extends TileEntityConnectorRedstone
 	{
 		BlockPos pos = this.getPos().offset(facing);
 		IBlockState state = world.getBlockState(pos);
-		if(state.hasComparatorInputOverride())
+  		if(state.hasComparatorInputOverride())
 			return state.getComparatorInputOverride(world, pos);
 		else if(state.isNormalCube())
 		{
@@ -98,37 +98,47 @@ public class TileEntityConnectorProbe extends TileEntityConnectorRedstone
 	@Override
 	public void updateInput(byte[] signals)
 	{
-		signals[redstoneChannelSending] = (byte)Math.max(lastOutput, signals[redstoneChannelSending]);
+		signals[redstoneChannelSending] = (byte)Math.max(transformInSignal(lastOutput), signals[redstoneChannelSending]);
 		rsDirty = false;
 	}
 
-	private boolean hitColorRings(float hitX, float hitY, float hitZ)
+	private int classifyHit(float hitX, float hitY, float hitZ)
 	{
-		float limit = 0.32f;
+		// 0 - channel area (lower ring), 1 - mode area (upper ring), 2 - threshold area (cube on top)
+  		float channelLimit = 0.25f;
+		float modeLimit = 0.75f;
 		switch(facing.getOpposite())
 		{
 			case UP:
-				return hitY < limit;
+				return (hitY < modeLimit)? (hitY < channelLimit)? 0 : 1 : 2;
 			case DOWN:
-				return hitY > (1.f - limit);
+				return (hitY > (1-modeLimit))? (hitY > (1-channelLimit))? 0 : 1 : 2;
 			case SOUTH:
-				return hitZ < limit;
+				return (hitZ < modeLimit)? (hitZ < channelLimit)? 0 : 1 : 2;
 			case NORTH:
-				return hitZ > (1.f - limit);
+				return (hitZ > (1-modeLimit))? (hitZ > (1-channelLimit))? 0 : 1 : 2;
 			case EAST:
-				return hitX < limit;
+				return (hitX < modeLimit)? (hitX < channelLimit)? 0 : 1 : 2;
 			case WEST:
-				return hitX > (1.f - limit);
+				return (hitX > (1-modeLimit))? (hitX > (1-channelLimit))? 0 : 1 : 2;
 		}
-		return false;
+		return 0;
 	}
 
 	@Override
 	public boolean hammerUseSide(EnumFacing side, EntityPlayer player, float hitX, float hitY, float hitZ)
 	{
-		if(player.isSneaking())
+		if(player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 2)
+			changeOutThreshold();
+		else if(player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 1)
+			changeOutMode();
+		else if(player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 0)
 			changeChannel();
-		else
+		else if(!player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 2)
+			changeInThreshold();
+		else if(!player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 1)
+			changeInMode();
+		else if(!player.isSneaking() && classifyHit(hitX, hitY, hitZ) == 0)
 			changeChannelSending();
 		markDirty();
 		wireNetwork.updateValues();
@@ -211,9 +221,17 @@ public class TileEntityConnectorProbe extends TileEntityConnectorRedstone
 	{
 		if(!hammer)
 			return null;
+		String channelString = I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannel).getTranslationKey());
+		String channelSendingString = I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannelSending).getTranslationKey());
+		String inString = I18n.format(Lib.DESC_INFO+"blockSide.io.0");
+		String outString = I18n.format(Lib.DESC_INFO+"blockSide.io.1");
+		String inThresholdString = (getInThreshold() > 0)? "("+getInThreshold()+"+)" : "";
+		String outThresholdString = (getOutThreshold() > 0)? "("+getOutThreshold()+"+)" : "";
 		return new String[]{
-				I18n.format(Lib.DESC_INFO+"redstoneChannel.rec", I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannel).getTranslationKey())),
-				I18n.format(Lib.DESC_INFO+"redstoneChannel.send", I18n.format("item.fireworksCharge."+EnumDyeColor.byMetadata(redstoneChannelSending).getTranslationKey()))
+				I18n.format(Lib.DESC_INFO+"redstoneChannel.rec", channelString),
+				I18n.format(Lib.DESC_INFO+"redstoneMode."+getOutMode(), outString, outThresholdString),
+				I18n.format(Lib.DESC_INFO+"redstoneChannel.send", channelSendingString),
+  				I18n.format(Lib.DESC_INFO+"redstoneMode."+getInMode(), inString, inThresholdString)
 		};
 	}
 
