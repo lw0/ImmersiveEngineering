@@ -35,6 +35,11 @@ public class TileEntityConnectorProbe extends TileEntityConnectorRedstone
 	private int redstoneChannelSending = 0;
 	private int lastOutput = 0;
 
+	public void changeChannelSending()
+	{
+		redstoneChannelSending = (redstoneChannelSending + 1) & 0xf;
+	}
+
 	@Override
 	public void update()
 	{
@@ -97,13 +102,34 @@ public class TileEntityConnectorProbe extends TileEntityConnectorRedstone
 		rsDirty = false;
 	}
 
+	private boolean hitColorRings(float hitX, float hitY, float hitZ)
+	{
+		float limit = 0.32f;
+		switch(facing.getOpposite())
+		{
+			case UP:
+				return hitY < limit;
+			case DOWN:
+				return hitY > (1.f - limit);
+			case SOUTH:
+				return hitZ < limit;
+			case NORTH:
+				return hitZ > (1.f - limit);
+			case EAST:
+				return hitX < limit;
+			case WEST:
+				return hitX > (1.f - limit);
+		}
+		return false;
+	}
+
 	@Override
 	public boolean hammerUseSide(EnumFacing side, EntityPlayer player, float hitX, float hitY, float hitZ)
 	{
 		if(player.isSneaking())
-			redstoneChannel = (redstoneChannel+1)%16;
+			changeChannel();
 		else
-			redstoneChannelSending = (redstoneChannelSending+1)%16;
+			changeChannelSending();
 		markDirty();
 		wireNetwork.updateValues();
 		onChange();
